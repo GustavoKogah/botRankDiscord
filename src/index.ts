@@ -5,6 +5,7 @@ import fs from 'node:fs';
 interface Player {
   userId: string;
   name: string;
+  familyName: string;
   gs: number;
 }
 
@@ -31,6 +32,12 @@ const commands = [
             description: 'Seu Gear Score',
             type: 4,
             required: true,
+          },
+          {
+            name: 'nome_familia',
+            description: 'Seu nome de família (opcional se já cadastrado)',
+            type: 3,
+            required: false,
           },
         ],
       },
@@ -85,7 +92,6 @@ async function registerCommands(guildId: string, guildName: string) {
 client.once('ready', async () => {
   console.log('🤖 Bot online');
 
-  // Registra em todas as guilds que o bot já está
   const guilds = client.guilds.cache;
   for (const [guildId, guild] of guilds) {
     await registerCommands(guildId, guild.name);
@@ -111,26 +117,50 @@ client.on('interactionCreate', async (interaction) => {
   // 🔹 SET
   if (sub === 'set') {
     const gs = interaction.options.getInteger('gs', true);
-    const name = interaction.user.username;
+    const familyNameInput = interaction.options.getString('nome_familia');
 
     const existing = data.find(p => p.userId === interaction.user.id);
 
     if (existing) {
+      // Atualiza gs sempre
       existing.gs = gs;
+
+      // Atualiza nome de família só se foi preenchido
+      if (familyNameInput) {
+        existing.familyName = familyNameInput;
+      }
+
+      save();
+
+      await interaction.reply({
+        content: `✅ GS atualizado para **${gs}**\n👨‍👩‍👧 Família: **${existing.familyName}**`,
+        ephemeral: true,
+      });
+
     } else {
+      // Primeira vez — nome de família obrigatório
+      if (!familyNameInput) {
+        await interaction.reply({
+          content: '❌ É sua primeira vez! Por favor informe seu **nome de família**.',
+          ephemeral: true,
+        });
+        return;
+      }
+
       data.push({
         userId: interaction.user.id,
-        name,
+        name: interaction.user.username,
+        familyName: familyNameInput,
         gs,
       });
+
+      save();
+
+      await interaction.reply({
+        content: `✅ Cadastrado!\n👨‍👩‍👧 Família: **${familyNameInput}**\n⚔️ GS: **${gs}**`,
+        ephemeral: true,
+      });
     }
-
-    save();
-
-    await interaction.reply({
-      content: `✅ GS atualizado para ${gs}`,
-      ephemeral: true,
-    });
   }
 
   // 🔹 TOP
@@ -145,7 +175,7 @@ client.on('interactionCreate', async (interaction) => {
         i === 1 ? '🥈' :
         i === 2 ? '🥉' : '';
 
-      msg += `${medal} #${i + 1} - ${p.name} (${p.gs})\n`;
+      msg += `${medal} #${i + 1} - ${p.familyName} (${p.gs})\n`;
     });
 
     await interaction.reply(msg);
@@ -161,7 +191,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (index === -1) {
       await interaction.reply({
-        content: '❌ Você não está no ranking',
+        content: '❌ Você não está no ranking. Use `/gear set` para se cadastrar!',
         ephemeral: true,
       });
       return;
@@ -181,7 +211,7 @@ client.on('interactionCreate', async (interaction) => {
     const diff = next ? (next.gs - player.gs) : 0;
 
     await interaction.reply({
-      content: `📊 Você está em #${index + 1}\nGS: ${player.gs}\nFalta ${diff} GS para o próximo`,
+      content: `📊 **${player.familyName}**\nPosição: **#${index + 1}**\nGS: **${player.gs}**\n${diff > 0 ? `Falta **${diff} GS** para o próximo` : '🏆 Você está em primeiro!'}`,
       ephemeral: true,
     });
   }
