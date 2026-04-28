@@ -12,29 +12,9 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN!);
+const token = process.env.TOKEN!;
+const rest = new REST({ version: '10' }).setToken(token);
 const CLIENT_ID = '1498391883863294122';
-
-let data: Player[] = [];
-
-// 📥 Carregar dados
-if (fs.existsSync('./data.json')) {
-  data = JSON.parse(fs.readFileSync('./data.json', 'utf-8'));
-}
-
-// 💾 Salvar dados
-function save() {
-  fs.writeFileSync('./data.json', JSON.stringify(data, null, 2));
-}
-
-// 🏆 Ranking
-function getRanking(): Player[] {
-  return [...data].sort((a, b) => b.gs - a.gs);
-}
-
-/* ---------------------------
-   📌 REGISTRO DE COMANDOS
-----------------------------*/
 
 const commands = [
   {
@@ -68,17 +48,33 @@ const commands = [
   },
 ];
 
-// 🚀 REGISTRA GLOBALMENTE (funciona em todos servidores)
-async function registerCommands() {
+let data: Player[] = [];
+
+// 📥 Carregar dados
+if (fs.existsSync('./data.json')) {
+  data = JSON.parse(fs.readFileSync('./data.json', 'utf-8'));
+}
+
+// 💾 Salvar dados
+function save() {
+  fs.writeFileSync('./data.json', JSON.stringify(data, null, 2));
+}
+
+// 🏆 Ranking
+function getRanking(): Player[] {
+  return [...data].sort((a, b) => b.gs - a.gs);
+}
+
+// 📌 Função de registro de comandos
+async function registerCommands(guildId: string, guildName: string) {
   try {
     await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
+      Routes.applicationGuildCommands(CLIENT_ID, guildId),
       { body: commands }
     );
-
-    console.log('✅ Comandos registrados globalmente');
+    console.log(`✅ Comandos registrados na guild: ${guildName}`);
   } catch (err) {
-    console.error('❌ Erro ao registrar comandos:', err);
+    console.error(`❌ Erro ao registrar na guild ${guildName}:`, err);
   }
 }
 
@@ -89,7 +85,17 @@ async function registerCommands() {
 client.once('ready', async () => {
   console.log('🤖 Bot online');
 
-  await registerCommands();
+  // Registra em todas as guilds que o bot já está
+  const guilds = client.guilds.cache;
+  for (const [guildId, guild] of guilds) {
+    await registerCommands(guildId, guild.name);
+  }
+});
+
+// Quando o bot entra em um servidor novo
+client.on('guildCreate', async (guild) => {
+  console.log(`📥 Bot adicionado em: ${guild.name}`);
+  await registerCommands(guild.id, guild.name);
 });
 
 /* ---------------------------
@@ -98,7 +104,6 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-
   if (interaction.commandName !== 'gear') return;
 
   const sub = interaction.options.getSubcommand();
@@ -148,44 +153,42 @@ client.on('interactionCreate', async (interaction) => {
 
   // 🔹 ME
   if (sub === 'me') {
-  const ranking = getRanking();
+    const ranking = getRanking();
 
-  const index = ranking.findIndex(
-    (p) => p.userId === interaction.user.id
-  );
+    const index = ranking.findIndex(
+      (p) => p.userId === interaction.user.id
+    );
 
-  if (index === -1) {
+    if (index === -1) {
+      await interaction.reply({
+        content: '❌ Você não está no ranking',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const player = ranking[index];
+
+    if (!player) {
+      await interaction.reply({
+        content: '❌ Erro interno: jogador não encontrado no ranking',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const next = ranking[index - 1];
+    const diff = next ? (next.gs - player.gs) : 0;
+
     await interaction.reply({
-      content: '❌ Você não está no ranking',
+      content: `📊 Você está em #${index + 1}\nGS: ${player.gs}\nFalta ${diff} GS para o próximo`,
       ephemeral: true,
     });
-    return;
   }
-
-  const player = ranking[index];
-
-  if (!player) {
-    await interaction.reply({
-      content: '❌ Erro interno: jogador não encontrado no ranking',
-      ephemeral: true,
-    });
-    return;
-  }
-
-  const next = ranking[index - 1];
-  const diff = next ? (next.gs - player.gs) : 0;
-
-  await interaction.reply({
-    content: `📊 Você está em #${index + 1}
-GS: ${player.gs}
-Falta ${diff} GS para o próximo`,
-    ephemeral: true,
-  });
-}
 });
 
 /* ---------------------------
    🔑 LOGIN
 ----------------------------*/
 
-client.login(process.env.TOKEN);
+client.login(token);
